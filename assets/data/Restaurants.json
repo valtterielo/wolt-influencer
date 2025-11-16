@@ -1,0 +1,42 @@
+[
+    {
+        "name": "Brasserie Lumiere",
+        "mode": "reserve"
+    },
+    {
+        "name": "Cafe Aurora",
+        "mode": "order"
+    },
+    {
+        "name": "Luna Bistro",
+        "mode": "reserve"
+    },
+    {
+        "name": "Nordic Sushi Bar",
+        "mode": "order"
+    },
+    {
+        "name": "Street Eats",
+        "mode": "order"
+    },
+    {
+        "name": "Maison Nordique",
+        "mode": "reserve"
+    },
+    {
+        "name": "Trattoria Bellamia",
+        "mode": "order"
+    },
+    {
+        "name": "Stacked & Loaded",
+        "mode": "order"
+    },
+    {
+        "name": "El Camino Cart",
+        "mode": "order"
+    },
+    {
+        "name": "Golden Crumb Bakery",
+        "mode": "order"
+    }
+]
