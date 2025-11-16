@@ -5,26 +5,22 @@ function log(...args) {
 }
 
 export async function semanticSearch(apiKey, query, videos) {
-    const trimmed = query.trim();
-    if (!trimmed) {
-        // No query -> everything matches
-        return videos.map((v) => v.id);
-    }
-
-    const payload = {
-        user_query: trimmed,
-        videos: videos.map((v) => ({
-            id: v.id,
-            name: v.name,
-            tags: v.tags || [],
-        })),
-    };
-
-    log("Sending semantic search payload:", payload);
-
-    let response;
     try {
-        response = await fetch("https://api.openai.com/v1/chat/completions", {
+        const trimmed = query.trim();
+        if (!trimmed) return videos.map(v => v.id);
+
+        const payload = {
+            user_query: trimmed,
+            videos: videos.map(v => ({
+                id: v.id,
+                name: v.name,
+                tags: v.tags || [],
+            })),
+        };
+
+        log("Sending semantic search payload:", payload);
+
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
                 Authorization: `Bearer ${apiKey}`,
@@ -32,25 +28,34 @@ export async function semanticSearch(apiKey, query, videos) {
             },
             body: JSON.stringify({
                 model: "gpt-4.1-mini",
-                // Don't use response_format to keep it simple
+                response_format: { type: "json_object" },
                 messages: [
                     {
                         role: "system",
                         content: `
-You help match a user search query to restaurant review videos.
+You are a semantic search selector.
 
-You will receive JSON with:
-- "user_query": what the user typed
+### REQUIRED OUTPUT FORMAT
+Return ONLY valid JSON:
+{ "matches": ["1","3","7"] }
+
+No explanation. No extra text. No markdown.
+
+### YOUR TASK
+Given:
+- "user_query": search text
 - "videos": array of { id, name, tags }
 
-Return ONLY a JSON object like:
-{ "matches": ["1", "3"] }
+Determine which videos best match the meaning of the query, even if:
+- tags do not include the literal term
+- the match is based on cuisine similarity, food type, vibe, or style
 
-"matches" must be an array of video IDs (strings) that best match the query,
-even if the exact word doesn't appear in the tags.
-
-IMPORTANT: Respond with valid JSON only, no explanation, no extra text.
-                        `,
+### RULES
+- Output must always be valid JSON.
+- If no strong matches exist, return: { "matches": [] }
+- Prefer videos whose *food style* or *vibe* matches query.
+- The word "json" appears here to satisfy OpenAI validation.
+`
                     },
                     {
                         role: "user",
@@ -59,38 +64,43 @@ IMPORTANT: Respond with valid JSON only, no explanation, no extra text.
                 ],
             }),
         });
+
+        let json;
+        try {
+            json = await response.json();
+        } catch (err) {
+            log("JSON decode error:", err);
+            return videos.map(v => v.id);
+        }
+
+        if (json.error) {
+            log("semantic search error:", json.error);
+            return videos.map(v => v.id);
+        }
+
+        const message = json.choices?.[0]?.message;
+        if (!message?.content) {
+            log("message.content missing");
+            return videos.map(v => v.id);
+        }
+
+        let parsed;
+        try {
+            parsed = JSON.parse(message.content);
+        } catch (err) {
+            log("Bad JSON in content:", message.content);
+            return videos.map(v => v.id);
+        }
+
+        if (!parsed || !Array.isArray(parsed.matches)) {
+            log("No valid matches — fallback");
+            return videos.map(v => v.id);
+        }
+
+        return parsed.matches;
+
     } catch (err) {
-        log("Network error in semanticSearch:", err);
-        throw err;
+        log("semanticSearch crashed:", err);
+        return videos.map(v => v.id);
     }
-
-    let json;
-    try {
-        json = await response.json();
-    } catch (err) {
-        log("Failed to parse semanticSearch JSON:", err);
-        throw new Error("Invalid JSON from OpenAI");
-    }
-
-    if (json.error) {
-        log("semantic search error:", json.error);
-        throw new Error(json.error.message);
-    }
-
-    const message = json.choices?.[0]?.message;
-    log("Raw AI message:", message);
-
-    // IMPORTANT: parse the JSON string in message.content
-    let parsed;
-    try {
-        parsed = JSON.parse(message.content);
-    } catch (err) {
-        log("Failed to parse message.content JSON:", err, "content was:", message.content);
-        throw new Error("AI returned non-JSON content");
-    }
-
-    const matches = parsed.matches || [];
-    log("Parsed matches:", matches);
-
-    return matches;
 }

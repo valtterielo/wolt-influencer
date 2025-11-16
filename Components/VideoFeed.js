@@ -3,21 +3,68 @@ import { View, StyleSheet, FlatList, Text, TouchableOpacity } from "react-native
 import { Video } from "expo-av";
 import { useVideos } from "../Context/VideoContext";
 import FloatingSearchBar from "../Components/FloatingSearchBar";
+import { semanticSearch } from "../Utils/AISearch";
+import { useAPIKey } from "../Context/APIKeyContext";
 
 const restaurantData = require("../assets/data/Restaurants.json");
 
 export default function VideoFeed({ isFocused, goToRestaurants }) {
     const { videos } = useVideos();
+    const { apiKey } = useAPIKey();
+
     const videoRefs = useRef([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [viewHeight, setViewHeight] = useState(0);
 
     const [search, setSearch] = useState("");
-    const filteredVideos = videos.filter(v =>
-        v.name.toLowerCase().includes(search.toLowerCase())
-    );
 
+    // The final list to display
+    const [visibleVideos, setVisibleVideos] = useState(videos);
+
+    //
+    // 🔍 AI SEARCH HOOK
+    //
+    useEffect(() => {
+        let cancelled = false;
+
+        async function runSearch() {
+            if (!apiKey || !search.trim()) {
+                // fallback to showing all videos
+                setVisibleVideos(videos);
+                return;
+            }
+
+            try {
+                console.log("[Search] Running semantic search for:", search);
+
+                const matches = await semanticSearch(apiKey, search, videos);
+
+                if (!cancelled) {
+                    const filtered = videos.filter(v => matches.includes(v.id));
+                    console.log("[Search] AI returned matches:", matches);
+                    setVisibleVideos(filtered);
+                }
+
+            } catch (err) {
+                console.log("[Search] AI search failed:", err);
+
+                if (!cancelled) {
+                    // fallback: simple name search
+                    const filtered = videos.filter(v =>
+                        v.name.toLowerCase().includes(search.toLowerCase())
+                    );
+                    setVisibleVideos(filtered);
+                }
+            }
+        }
+
+        runSearch();
+        return () => { cancelled = true; };
+    }, [search, apiKey, videos]);
+
+    //
     // ---- AUTOPLAY WHEN SCROLLING ----
+    //
     const onViewableItemsChanged = useCallback(
         ({ viewableItems }) => {
             if (!viewableItems.length || !isFocused) return;
@@ -34,7 +81,9 @@ export default function VideoFeed({ isFocused, goToRestaurants }) {
         [isFocused]
     );
 
+    //
     // ---- PAUSE WHEN TAB NOT FOCUSED ----
+    //
     useEffect(() => {
         if (!isFocused) {
             videoRefs.current.forEach((ref) => ref?.pauseAsync());
@@ -54,7 +103,7 @@ export default function VideoFeed({ isFocused, goToRestaurants }) {
 
             {viewHeight > 0 && (
                 <FlatList
-                    data={filteredVideos}
+                    data={visibleVideos}
                     keyExtractor={(item) => item.id}
                     renderItem={({ item, index }) => {
                         const restaurant = restaurantData.find(
@@ -151,7 +200,6 @@ const styles = StyleSheet.create({
         fontWeight: "500",
     },
 
-    /* --- Order / Reserve Button --- */
     actionButton: {
         backgroundColor: "#009DE0",
         paddingHorizontal: 14,
